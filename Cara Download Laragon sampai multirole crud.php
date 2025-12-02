@@ -26,8 +26,13 @@ jika belum aktif buka php.ini, aktifkan extension=sqlite3, restart server PHP, j
 type nul > database\database.sqlite
 Edit .env:
   DB_CONNECTION=sqlite
-  DB_DATABASE=C:\laragon\www\namaproject\database\database.sqlite
+  DB_DATABASE=C:\\laragon\\www\\namaproject\\database\\database.sqlite
+
+  ATAU (alternatif jika error):
+  DB_DATABASE=C:/laragon/www/namaproject/database/database.sqlite
 php artisan config:clear
+
+#cara cek databse berhasil/tidak "dir database\" kalo berhasil muncul nama databse
 
 
 2. Buat Role Model & Migration
@@ -126,6 +131,9 @@ public function run(): void
 }
 
 database/seeders/DatabaseSeeder.php: (hapus/ komen "//" bagian user factory)
+use Database\Seeders\RoleSeeder;
+use Database\Seeders\UserSeeder;
+
 public function run(): void
 {
     $this->call([
@@ -133,7 +141,56 @@ public function run(): void
         UserSeeder::class,
     ]);
 }
+========================================================================================================================================================================
+#KALO SEEDER GAGAL#
 
+#ALTERNATIF - LANGSUNG INSERT DI DatabaseSeeder.php (PALING AMAN!)#
+
+Edit database/seeders/DatabaseSeeder.php jadi:
+
+<?php
+namespace Database\Seeders;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        // Insert roles
+        DB::table('roles')->insert([
+            ['name' => 'admin', 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'guru', 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'siswa', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        // Insert users
+        DB::table('users')->insert([
+            ['name' => 'Admin', 'email' => 'admin@gmail.com', 'password' => Hash::make('password'), 'role_id' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'Guru', 'email' => 'guru@gmail.com', 'password' => Hash::make('password'), 'role_id' => 2, 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'Siswa', 'email' => 'siswa@gmail.com', 'password' => Hash::make('password'), 'role_id' => 3, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+    }
+}
+
+Jalankan: php artisan migrate:fresh --seed
+  
+#KALO MASI GAGAL#
+php artisan tinker
+DB::table('roles')->insert([
+    ['name' => 'admin', 'created_at' => now(), 'updated_at' => now()],
+    ['name' => 'guru', 'created_at' => now(), 'updated_at' => now()],
+    ['name' => 'siswa', 'created_at' => now(), 'updated_at' => now()]
+]);
+
+DB::table('users')->insert([
+    ['name' => 'Admin', 'email' => 'admin@gmail.com', 'password' => bcrypt('password'), 'role_id' => 1, 'created_at' => now(), 'updated_at' => now()],
+    ['name' => 'Guru', 'email' => 'guru@gmail.com', 'password' => bcrypt('password'), 'role_id' => 2, 'created_at' => now(), 'updated_at' => now()],
+    ['name' => 'Siswa', 'email' => 'siswa@gmail.com', 'password' => bcrypt('password'), 'role_id' => 3, 'created_at' => now(), 'updated_at' => now()]
+]);
+exit
+========================================================================================================================================================================
 
 5. Buat Middleware CheckRole
 ---
@@ -480,4 +537,34 @@ php artisan migrate:fresh --seed
 
 10. Testing
 ---
+
 php artisan serve
+
+========================================================================================================================================================================
+TROUBLESHOOTING
+========================================================================================================================================================================
+
+1. Seeder ga jalan (cuma muncul "info seeding database"):
+   - Cek apakah ada "use Database\Seeders\RoleSeeder;" di DatabaseSeeder.php
+   - Jalankan: composer dump-autoload -o
+   - Atau pakai alternatif: langsung insert di DatabaseSeeder.php (lihat atas)
+   - Plan terakhir: pakai tinker (lihat atas)
+
+2. Database error "not found":
+   - Cek file database.sqlite sudah dibuat: dir database\
+   - Cek path di .env sudah benar (sesuai nama project)
+   - Coba ganti \ jadi / di path .env
+   - Jalankan: php artisan config:clear
+
+3. Migration error:
+   - Pastikan role_id migration dibuat SETELAH roles table
+   - Jalankan: php artisan migrate:fresh
+
+4. Error 403 Unauthorized setelah login:
+   - Cek middleware sudah didaftarkan di bootstrap/app.php
+   - Cek role name di database sama dengan di routes (lowercase semua)
+
+5. Breeze npm error:
+   - Hapus node_modules: rm -rf node_modules (Git Bash) atau rd /s node_modules (CMD)
+   - Install ulang: npm install
+   - Jalankan: npm run dev
