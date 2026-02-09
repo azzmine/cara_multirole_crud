@@ -36,9 +36,10 @@ php artisan config:clear
 
 
 2. Buat Role Model & Migration
----
+-------------------------------
 php artisan make:model Role -m
-
+-------------------------------
+===============================================
 database/migrations/xxxx_create_roles_table.php:
 public function up(): void
 {
@@ -53,7 +54,7 @@ public function down(): void
     {
         Schema::dropIfExists('roles');
     }
-
+====================
 app/Models/Role.php:
 protected $fillable = ['name'];
 public function users() {
@@ -62,9 +63,10 @@ public function users() {
 
 
 3. Tambah role_id ke Users
----
+--------------------------------------------------------------
 php artisan make:migration add_role_id_to_users --table=users
-
+--------------------------------------------------------------
+==================================================
 database/migrations/xxxx_add_role_id_to_users.php:
 public function up(): void
 {
@@ -82,71 +84,8 @@ public function role() {
 
 
 4. Buat Seeders
----
-php artisan make:seeder RoleSeeder
-php artisan make:seeder UserSeeder
-
-database/seeders/RoleSeeder.php:
-use App\Models\Role;
-
-public function run(): void
-{
-    Role::insert([
-        ['name' => 'admin', 'created_at' => now(), 'updated_at' => now()],
-        ['name' => 'guru', 'created_at' => now(), 'updated_at' => now()],
-        ['name' => 'siswa', 'created_at' => now(), 'updated_at' => now()],
-    ]);
-}
-
-database/seeders/UserSeeder.php:
-use App\Models\{User, Role};
-use Illuminate\Support\Facades\Hash;
-
-public function run(): void
-{
-        $adminRole = Role::where('name', 'admin')->first();
-        $guruRole = Role::where('name', 'guru')->first();
-        $siswaRole = Role::where('name', 'siswa')->first();
-
-        User::create([
-            'name' => 'Admin',
-            'email' => 'admin@gmail.com',
-            'password' => Hash::make('password'),
-            'role_id' => $adminRole->id,
-        ]);
-
-        User::create([
-            'name' => 'Guru',
-            'email' => 'guru@gmail.com',
-            'password' => Hash::make('password'),
-            'role_id' => $guruRole->id,
-        ]);
-
-        User::create([
-            'name' => 'Siswa',
-            'email' => 'siswa@gmail.com',
-            'password' => Hash::make('password'),
-            'role_id' => $siswaRole->id,
-        ]);
-}
-
-database/seeders/DatabaseSeeder.php: (hapus/ komen "//" bagian user factory)
-use Database\Seeders\RoleSeeder;
-use Database\Seeders\UserSeeder;
-
-public function run(): void
-{
-    $this->call([
-        RoleSeeder::class,
-        UserSeeder::class,
-    ]);
-}
-========================================================================================================================================================================
-#KALO SEEDER GAGAL#
-
-#ALTERNATIF - LANGSUNG INSERT DI DatabaseSeeder.php (PALING AMAN!)#
-
-Edit database/seeders/DatabaseSeeder.php jadi:
+========================================
+database/seeders/DatabaseSeeder.php jadi:
 
 <?php
 namespace Database\Seeders;
@@ -175,7 +114,7 @@ class DatabaseSeeder extends Seeder
 }
 
 Jalankan: php artisan migrate:fresh --seed
-  
+--------------------------------------------  
 #KALO MASI GAGAL#
 php artisan tinker
 DB::table('roles')->insert([
@@ -193,9 +132,10 @@ exit
 ========================================================================================================================================================================
 
 5. Buat Middleware CheckRole
----
+-------------------------------------
 php artisan make:middleware CheckRole
-
+-------------------------------------
+===================================
 app/Http/Middleware/CheckRole.php:
 use Illuminate\Support\Facades\Auth;
 
@@ -218,7 +158,7 @@ use Illuminate\Support\Facades\Auth;
 
         return $next($request);
     }
-
+=================================================
 bootstrap/app.php (tambahkan di ->withMiddleware):
 ->withMiddleware(function (Middleware $middleware) {
     $middleware->alias([
@@ -228,17 +168,18 @@ bootstrap/app.php (tambahkan di ->withMiddleware):
 
 
 6. Buat Controllers
----
+-----------------------------------------------------------
 php artisan make:controller Admin/DashboardController
 php artisan make:controller Admin/UserController --resource
 php artisan make:controller Guru/DashboardController
 php artisan make:controller Siswa/DashboardController
-
+-----------------------------------------------------------
+===================================================
 app/Http/Controllers/Admin/DashboardController.php:
 public function index() {
     return view('admin.dashboard');
 }
-
+==============================================
 app/Http/Controllers/Admin/UserController.php:
 use App\Models\{User, Role};
 use Illuminate\Support\Facades\Hash;
@@ -291,12 +232,12 @@ public function destroy(User $user) {
     $user->delete();
     return redirect()->route('admin.users.index')->with('success', 'User berhasil dihapus');
 }
-
+=================================================
 app/Http/Controllers/Guru/DashboardController.php:
 public function index() {
     return view('guru.dashboard');
 }
-
+===================================================
 app/Http/Controllers/Siswa/DashboardController.php:
 public function index() {
     return view('siswa.dashboard');
@@ -304,7 +245,7 @@ public function index() {
 
 
 7. Routes
----
+===============
 routes/web.php:
 use App\Http\Controllers\Admin\{DashboardController as AdminDashboard, UserController};
 use App\Http\Controllers\Guru\DashboardController as GuruDashboard;
@@ -333,7 +274,7 @@ Route::get('/dashboard', function () {
 
 
 8. Buat Views
----
+==========================================
 resources/views/admin/dashboard.blade.php:
 <x-app-layout>
     <x-slot name="header">
@@ -354,7 +295,7 @@ resources/views/admin/dashboard.blade.php:
         </div>
     </div>
 </x-app-layout>
-
+===========================================
 resources/views/admin/users/index.blade.php:
 <x-app-layout>
     <x-slot name="header">
@@ -404,7 +345,7 @@ resources/views/admin/users/index.blade.php:
         </div>
     </div>
 </x-app-layout>
-
+=============================================
 resources/views/admin/users/create.blade.php:
 <x-app-layout>
     <x-slot name="header">
@@ -451,7 +392,7 @@ resources/views/admin/users/create.blade.php:
         </div>
     </div>
 </x-app-layout>
-
+===========================================
 resources/views/admin/users/edit.blade.php:
 <x-app-layout>
     <x-slot name="header">
@@ -500,7 +441,7 @@ resources/views/admin/users/edit.blade.php:
         </div>
     </div>
 </x-app-layout>
-
+=========================================
 resources/views/guru/dashboard.blade.php:
 <x-app-layout>
     <x-slot name="header">
@@ -514,7 +455,7 @@ resources/views/guru/dashboard.blade.php:
         </div>
     </div>
 </x-app-layout>
-
+==========================================
 resources/views/siswa/dashboard.blade.php:
 <x-app-layout>
     <x-slot name="header">
@@ -568,3 +509,4 @@ TROUBLESHOOTING
    - Hapus node_modules: rm -rf node_modules (Git Bash) atau rd /s node_modules (CMD)
    - Install ulang: npm install
    - Jalankan: npm run dev
+
