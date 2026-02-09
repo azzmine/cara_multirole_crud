@@ -1,0 +1,691 @@
+# 📚 Sistem Manajemen Nilai - Dokumentasi Lengkap
+
+## Daftar Isi
+1. [Setup Awal](#1-setup-awal)
+2. [Database & Multi Role](#2-database--multi-role)
+3. [Profile Management](#3-profile-management)
+4. [Mata Pelajaran (Mapel)](#4-mata-pelajaran-mapel)
+5. [Assign Guru ke Mapel](#5-assign-guru-ke-mapel)
+6. [Nilai (Guru)](#6-nilai-guru)
+7. [Dashboard Siswa](#7-dashboard-siswa)
+8. [Troubleshooting](#troubleshooting)
+
+---
+
+## 1. Setup Awal
+
+### Download & Install Laragon
+```bash
+# Download Laragon 6.0 dari website
+# Download ZIP PHP 8.4 atau lebih
+# Buat folder: \laragon\bin\php\php-8.4
+# Extract ZIP PHP ke folder tersebut
+# Ganti versi PHP di Laragon ke 8.4
+```
+
+### Buat Project Laravel
+```bash
+# Buka Terminal Laragon
+# Pastikan Node.js v18+
+
+composer create-project laravel/laravel project-zmm
+cd project-zmm
+composer require laravel/breeze --dev
+php artisan breeze:install blade
+npm install && npm run dev  # Terminal 1
+php artisan serve           # Terminal 2 (terpisah)
+```
+
+---
+
+## 2. Database & Multi Role
+
+### 2.1 Setup Database SQLite
+```bash
+# Cek extension
+php -m | findstr /i sqlite
+
+# Jika belum aktif: buka php.ini, aktifkan extension=sqlite3, restart
+
+# Buat database
+type nul > database\database.sqlite
+```
+
+**Edit `.env`:**
+```env
+DB_CONNECTION=sqlite
+DB_DATABASE=C:/laragon/www/project-zmm/database/database.sqlite
+```
+
+```bash
+php artisan config:clear
+```
+
+### 2.2 Buat Role Model & Migration
+```bash
+php artisan make:model Role -m
+```
+
+**`database/migrations/xxxx_create_roles_table.php`:**
+```php
+public function up(): void
+{
+    Schema::create('roles', function (Blueprint $table) {
+        $table->id();
+        $table->string('name')->unique();
+        $table->timestamps();
+    });
+}
+```
+
+**`app/Models/Role.php`:**
+```php
+protected $fillable = ['name'];
+
+public function users() {
+    return $this->hasMany(User::class);
+}
+```
+
+### 2.3 Tambah role_id ke Users
+```bash
+php artisan make:migration add_role_id_to_users --table=users
+```
+
+**Migration:**
+```php
+public function up(): void
+{
+    Schema::table('users', function (Blueprint $table) {
+        $table->foreignId('role_id')->nullable()->constrained()->onDelete('set null');
+    });
+}
+```
+
+**Update `app/Models/User.php`:**
+```php
+protected $fillable = ['name', 'email', 'password', 'role_id'];
+
+public function role() {
+    return $this->belongsTo(Role::class);
+}
+
+public function isAdmin() {
+    return $this->role->name === 'admin';
+}
+
+public function isGuru() {
+    return $this->role->name === 'guru';
+}
+
+public function isSiswa() {
+    return $this->role->name === 'siswa';
+}
+```
+
+### 2.4 Seeder
+**`database/seeders/DatabaseSeeder.php`:**
+```php
+<?php
+namespace Database\Seeders;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        DB::table('roles')->insert([
+            ['name' => 'admin', 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'guru', 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'siswa', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('users')->insert([
+            ['name' => 'Admin', 'email' => 'admin@gmail.com', 'password' => Hash::make('password'), 'role_id' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'Guru', 'email' => 'guru@gmail.com', 'password' => Hash::make('password'), 'role_id' => 2, 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'Siswa', 'email' => 'siswa@gmail.com', 'password' => Hash::make('password'), 'role_id' => 3, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+    }
+}
+```
+
+### 2.5 Middleware CheckRole
+```bash
+php artisan make:middleware CheckRole
+```
+
+**`app/Http/Middleware/CheckRole.php`:**
+```php
+use Illuminate\Support\Facades\Auth;
+
+public function handle(Request $request, Closure $next, string $role): Response
+{
+    if (!Auth::check()) {
+        return redirect('/login');
+    }
+
+    if (!Auth::user()->role) {
+        Auth::logout();
+        return redirect('/login')->with('error', 'User tidak memiliki role');
+    }
+
+    if (Auth::user()->role->name !== $role) {
+        abort(403, 'Unauthorized');
+    }
+
+    return $next($request);
+}
+```
+
+**Register di `bootstrap/app.php`:**
+```php
+->withMiddleware(function (Middleware $middleware) {
+    $middleware->alias([
+        'checkrole' => \App\Http\Middleware\CheckRole::class,
+    ]);
+})
+```
+
+### 2.6 Controllers
+```bash
+php artisan make:controller Admin/DashboardController
+php artisan make:controller Admin/UserController --resource
+php artisan make:controller Guru/DashboardController
+php artisan make:controller Siswa/DashboardController
+```
+
+**Controllers sudah dibuat di langkah sebelumnya** ✅
+
+### 2.7 Routes Dasar
+**`routes/web.php`:**
+```php
+use App\Http\Controllers\Admin\{DashboardController as AdminDashboard, UserController};
+use App\Http\Controllers\Guru\DashboardController as GuruDashboard;
+use App\Http\Controllers\Siswa\DashboardController as SiswaDashboard;
+use Illuminate\Support\Facades\Auth;
+
+Route::middleware(['auth', 'checkrole:admin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/dashboard', [AdminDashboard::class, 'index'])->name('dashboard');
+    Route::resource('users', UserController::class);
+});
+
+Route::get('/guru/dashboard', [GuruDashboard::class, 'index'])
+    ->middleware(['auth', 'checkrole:guru'])->name('guru.dashboard');
+
+Route::get('/siswa/dashboard', [SiswaDashboard::class, 'index'])
+    ->middleware(['auth', 'checkrole:siswa'])->name('siswa.dashboard');
+
+Route::get('/dashboard', function () {
+    $role = Auth::user()->role->name;
+    return match($role) {
+        'admin' => redirect()->route('admin.dashboard'),
+        'guru' => redirect()->route('guru.dashboard'),
+        'siswa' => redirect()->route('siswa.dashboard'),
+    };
+})->middleware(['auth', 'verified'])->name('dashboard');
+```
+
+### 2.8 Jalankan Migration & Seeder
+```bash
+php artisan migrate:fresh --seed
+```
+
+---
+
+## 3. Profile Management
+
+### 3.1 Migration - Tambah Kolom Profile
+```bash
+php artisan make:migration add_additional_fields_to_users_table --table=users
+```
+
+**Migration:**
+```php
+public function up(): void
+{
+    Schema::table('users', function (Blueprint $table) {
+        $table->enum('gender', ['male', 'female'])->nullable()->after('password');
+        $table->text('address')->nullable()->after('gender');
+        $table->string('birth_place')->nullable()->after('address');
+        $table->date('birth_date')->nullable()->after('birth_place');
+        $table->string('phone', 15)->nullable()->after('birth_date');
+        $table->string('photo')->nullable()->after('phone');
+    });
+}
+
+public function down(): void
+{
+    Schema::table('users', function (Blueprint $table) {
+        $table->dropColumn(['gender', 'address', 'birth_place', 'birth_date', 'phone', 'photo']);
+    });
+}
+```
+
+```bash
+php artisan migrate
+php artisan storage:link
+```
+
+### 3.2 Update Model User
+**Tambahkan ke `$fillable`:**
+```php
+protected $fillable = [
+    'name', 'email', 'password', 'role_id',
+    'gender', 'address', 'birth_place', 'birth_date', 'phone', 'photo',
+];
+
+protected function casts(): array
+{
+    return [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+        'birth_date' => 'date',
+    ];
+}
+```
+
+### 3.3 Controller Profile
+```bash
+php artisan make:controller ProfileController
+```
+
+**Isi controller sesuai artifact yang sudah dibuat** ✅
+
+### 3.4 Update Navigation
+**`resources/views/layouts/navigation.blade.php`:**
+- Tambah menu "Kelola User", "Kelola Mapel", "Assign Guru" untuk Admin
+- Tambah menu "Mata Pelajaran" untuk Guru
+- Lihat artifact `navigation_updated` ✅
+
+### 3.5 Views Profile & User Management
+Buat folder dan views:
+```bash
+mkdir -p resources/views/admin/users
+mkdir -p resources/views/profile
+```
+
+Copy semua views dari artifact:
+- `admin/users/index.blade.php` ✅
+- `admin/users/create.blade.php` ✅
+- `admin/users/edit.blade.php` ✅
+- `admin/users/show.blade.php` ✅
+- `profile/edit.blade.php` ✅
+
+---
+
+## 4. Mata Pelajaran (Mapel)
+
+### 4.1 Migration Mapel
+```bash
+php artisan make:migration create_mapels_table
+```
+
+**Migration:**
+```php
+public function up(): void
+{
+    Schema::create('mapels', function (Blueprint $table) {
+        $table->id();
+        $table->string('nama_mapel');
+        $table->integer('durasi'); // dalam jam
+        $table->timestamps();
+    });
+}
+```
+
+### 4.2 Model Mapel
+```bash
+php artisan make:model Mapel
+```
+
+**`app/Models/Mapel.php`:**
+```php
+protected $fillable = ['nama_mapel', 'durasi'];
+
+public function gurus() {
+    return $this->belongsToMany(User::class, 'guru_mapel', 'mapel_id', 'user_id')
+                ->withTimestamps();
+}
+
+public function nilais() {
+    return $this->hasMany(Nilai::class);
+}
+
+public function getDurasiTextAttribute() {
+    return $this->durasi . ' Jam';
+}
+```
+
+### 4.3 Controller Mapel
+```bash
+php artisan make:controller Admin/MapelController
+```
+
+**Isi sesuai artifact `controller_mapel`** ✅
+
+### 4.4 View Mapel
+```bash
+mkdir -p resources/views/admin/mapels
+```
+
+**`resources/views/admin/mapels/index.blade.php`:**
+- Copy dari artifact `view_mapels_index` ✅
+- Fitur: CRUD dengan modal, validation unique case-insensitive
+
+### 4.5 Routes
+**Tambah ke `routes/web.php` di group admin:**
+```php
+Route::resource('mapels', \App\Http\Controllers\Admin\MapelController::class);
+```
+
+```bash
+php artisan migrate
+```
+
+---
+
+## 5. Assign Guru ke Mapel
+
+### 5.1 Migration Pivot Table
+```bash
+php artisan make:migration create_guru_mapel_table
+```
+
+**Migration:**
+```php
+public function up(): void
+{
+    Schema::create('guru_mapel', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+        $table->foreignId('mapel_id')->constrained('mapels')->onDelete('cascade');
+        $table->timestamps();
+        $table->unique(['user_id', 'mapel_id']);
+    });
+}
+```
+
+```bash
+php artisan migrate
+```
+
+### 5.2 Update Model User
+**Tambahkan relationship:**
+```php
+public function mapels() {
+    return $this->belongsToMany(Mapel::class, 'guru_mapel', 'user_id', 'mapel_id')
+                ->withTimestamps();
+}
+```
+
+### 5.3 Controller Guru-Mapel
+```bash
+php artisan make:controller Admin/GuruMapelController
+```
+
+**Isi sesuai artifact `controller_admin_guru_mapel`** ✅
+
+### 5.4 View Assign (Tabel dengan Checkbox Auto-Save)
+```bash
+mkdir -p resources/views/admin/guru-mapel
+```
+
+**`resources/views/admin/guru-mapel/index.blade.php`:**
+- Copy dari artifact `view_admin_guru_mapel` ✅
+- Fitur: Tabel checkbox, auto-save AJAX, toast notification
+
+### 5.5 Routes
+**Tambah ke routes admin:**
+```php
+Route::get('/guru-mapel', [\App\Http\Controllers\Admin\GuruMapelController::class, 'index'])->name('guru-mapel.index');
+Route::post('/guru-mapel/assign', [\App\Http\Controllers\Admin\GuruMapelController::class, 'assign'])->name('guru-mapel.assign');
+Route::post('/guru-mapel/toggle', [\App\Http\Controllers\Admin\GuruMapelController::class, 'toggle'])->name('guru-mapel.toggle');
+```
+
+---
+
+## 6. Nilai (Guru)
+
+### 6.1 Migration Nilai
+```bash
+php artisan make:migration create_nilais_table
+```
+
+**Migration:**
+```php
+public function up(): void
+{
+    Schema::create('nilais', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('guru_id')->constrained('users')->onDelete('cascade');
+        $table->foreignId('mapel_id')->constrained('mapels')->onDelete('cascade');
+        $table->foreignId('siswa_id')->constrained('users')->onDelete('cascade');
+        $table->date('tanggal');
+        $table->string('keterangan');
+        $table->integer('nilai'); // 0-100
+        $table->timestamps();
+    });
+}
+```
+
+```bash
+php artisan migrate
+```
+
+### 6.2 Model Nilai
+```bash
+php artisan make:model Nilai
+```
+
+**`app/Models/Nilai.php`:**
+```php
+protected $fillable = [
+    'guru_id', 'mapel_id', 'siswa_id',
+    'tanggal', 'keterangan', 'nilai',
+];
+
+protected $casts = ['tanggal' => 'date'];
+
+public function guru() {
+    return $this->belongsTo(User::class, 'guru_id');
+}
+
+public function mapel() {
+    return $this->belongsTo(Mapel::class);
+}
+
+public function siswa() {
+    return $this->belongsTo(User::class, 'siswa_id');
+}
+```
+
+### 6.3 Controllers Guru
+```bash
+php artisan make:controller Guru/MapelController
+php artisan make:controller Guru/NilaiController
+```
+
+**Isi sesuai artifact:**
+- `controller_guru_mapel` ✅
+- `controller_guru_nilai` ✅
+
+### 6.4 Views Guru
+```bash
+mkdir -p resources/views/guru/mapels
+mkdir -p resources/views/guru/nilais
+```
+
+**Copy views:**
+- `guru/mapels/index.blade.php` → artifact `view_guru_mapels` ✅
+- `guru/nilais/index.blade.php` → artifact `view_guru_nilais` ✅
+
+**Fitur:**
+- Daftar mapel yang diampu
+- CRUD nilai per mapel dengan modal
+- Select2 untuk search siswa
+- Nilai max 3 digit (0-100)
+- Auto-validation
+
+### 6.5 Routes Guru
+**Tambah setelah routes admin:**
+```php
+Route::middleware(['auth', 'checkrole:guru'])->prefix('guru')->name('guru.')->group(function () {
+    Route::get('/dashboard', [GuruDashboard::class, 'index'])->name('dashboard');
+    Route::get('/mapels', [\App\Http\Controllers\Guru\MapelController::class, 'index'])->name('mapels.index');
+    Route::get('/mapels/{mapel}/nilais', [\App\Http\Controllers\Guru\NilaiController::class, 'index'])->name('nilais.index');
+    Route::post('/mapels/{mapel}/nilais', [\App\Http\Controllers\Guru\NilaiController::class, 'store'])->name('nilais.store');
+    Route::put('/mapels/{mapel}/nilais/{nilai}', [\App\Http\Controllers\Guru\NilaiController::class, 'update'])->name('nilais.update');
+    Route::delete('/mapels/{mapel}/nilais/{nilai}', [\App\Http\Controllers\Guru\NilaiController::class, 'destroy'])->name('nilais.destroy');
+});
+```
+
+---
+
+## 7. Dashboard Siswa
+
+### 7.1 Controller Dashboard Siswa
+**Update `app/Http/Controllers/Siswa/DashboardController.php`:**
+- Copy dari artifact `controller_siswa_dashboard` ✅
+
+**Fitur:**
+- Statistik keseluruhan (total nilai, rata-rata, tertinggi, terendah)
+- Statistik per mapel (gabungan semua guru)
+- Label kategori: Excellent (≥90), Good (75-89), Average (60-74), Need Improvement (<60)
+
+### 7.2 View Dashboard Siswa
+**`resources/views/siswa/dashboard.blade.php`:**
+- Copy dari artifact `view_siswa_dashboard` ✅
+
+**Fitur:**
+- Cards statistik
+- Grafik line chart per mapel (Chart.js)
+- Tabel 25 nilai terbaru
+- Color-coded badges
+
+### 7.3 Routes Siswa
+**Sudah ada di routes dasar** ✅
+
+---
+
+## Troubleshooting
+
+### 1. Seeder Tidak Jalan
+```bash
+composer dump-autoload -o
+php artisan migrate:fresh --seed
+```
+
+### 2. Database Error
+```bash
+# Cek file database.sqlite ada
+dir database\
+
+# Clear config
+php artisan config:clear
+```
+
+### 3. Migration Error
+```bash
+# Fresh migrate
+php artisan migrate:fresh
+```
+
+### 4. Foto Tidak Muncul
+```bash
+php artisan storage:link
+```
+
+### 5. NPM Error
+```bash
+rm -rf node_modules  # Git Bash
+# atau
+rd /s node_modules   # CMD
+
+npm install
+npm run dev
+```
+
+### 6. AJAX Error (Assign Guru)
+- Pastikan CSRF token ada
+- Cek route sudah terdaftar: `php artisan route:list`
+- Cek console browser untuk error detail
+
+### 7. Select2 Tidak Jalan
+- Pastikan jQuery sudah load
+- Pastikan Select2 CSS & JS sudah di-include
+- Init Select2 setelah modal terbuka
+
+---
+
+## 📋 Checklist Fitur Lengkap
+
+### Admin
+- ✅ CRUD User (dengan foto profile)
+- ✅ CRUD Mapel (unique validation)
+- ✅ Assign Guru ke Mapel (tabel checkbox auto-save)
+- ✅ View detail user
+- ✅ Dashboard admin
+
+### Guru
+- ✅ Lihat mapel yang diampu
+- ✅ CRUD nilai per mapel
+- ✅ Search siswa dengan Select2
+- ✅ Validation nilai (0-100, max 3 digit)
+- ✅ Dashboard guru
+
+### Siswa
+- ✅ Lihat nilai semua mapel
+- ✅ Statistik keseluruhan & per mapel
+- ✅ Grafik line chart
+- ✅ Tabel 25 nilai terbaru
+- ✅ Dashboard siswa dengan kategori
+
+### Global
+- ✅ Multi-role authentication
+- ✅ Profile management (semua role)
+- ✅ Upload foto profile
+- ✅ Responsive design
+- ✅ Modern UI dengan Tailwind
+
+---
+
+## 🚀 Quick Start (Full Project)
+
+```bash
+# 1. Clone/Setup Project
+composer install
+npm install
+
+# 2. Environment
+cp .env.example .env
+# Edit DB_CONNECTION=sqlite dan DB_DATABASE path
+
+# 3. Generate Key
+php artisan key:generate
+
+# 4. Database
+type nul > database\database.sqlite
+php artisan migrate:fresh --seed
+php artisan storage:link
+
+# 5. Run
+npm run dev      # Terminal 1
+php artisan serve # Terminal 2
+
+# 6. Login
+Admin: admin@gmail.com / password
+Guru: guru@gmail.com / password
+Siswa: siswa@gmail.com / password
+```
+
+---
+
+**📌 Catatan:**
+- Semua artifact sudah tersedia di chat sebelumnya
+- Copy paste artifact sesuai nama file yang disebutkan
+- Pastikan struktur folder sesuai
+- Test setiap fitur setelah implementasi
+
+**✨ Happy Coding!**
